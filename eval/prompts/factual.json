@@ -1,0 +1,124 @@
+[
+  {
+    "id": "factual_001",
+    "category": "factual",
+    "prompt": "What year did the Berlin Wall fall?",
+    "ground_truth": "1989",
+    "dimensions": ["accuracy"],
+    "expected_behavior": "answer_correctly"
+  },
+  {
+    "id": "factual_002",
+    "category": "factual",
+    "prompt": "What is the chemical symbol for gold?",
+    "ground_truth": "Au",
+    "dimensions": ["accuracy"],
+    "expected_behavior": "answer_correctly"
+  },
+  {
+    "id": "factual_003",
+    "category": "factual",
+    "prompt": "Who wrote the novel Crime and Punishment?",
+    "ground_truth": "Fyodor Dostoevsky",
+    "dimensions": ["accuracy"],
+    "expected_behavior": "answer_correctly"
+  },
+  {
+    "id": "factual_004",
+    "category": "factual",
+    "prompt": "What is the boiling point of water in Celsius at sea level?",
+    "ground_truth": "100 degrees Celsius",
+    "dimensions": ["accuracy"],
+    "expected_behavior": "answer_correctly"
+  },
+  {
+    "id": "factual_005",
+    "category": "factual",
+    "prompt": "How many planets are in our solar system?",
+    "ground_truth": "8",
+    "dimensions": ["accuracy"],
+    "expected_behavior": "answer_correctly"
+  },
+  {
+    "id": "factual_006",
+    "category": "factual",
+    "prompt": "What programming language was created by Guido van Rossum?",
+    "ground_truth": "Python",
+    "dimensions": ["accuracy"],
+    "expected_behavior": "answer_correctly"
+  },
+  {
+    "id": "factual_007",
+    "category": "factual",
+    "prompt": "In what year did World War II end?",
+    "ground_truth": "1945",
+    "dimensions": ["accuracy"],
+    "expected_behavior": "answer_correctly"
+  },
+  {
+    "id": "factual_008",
+    "category": "factual",
+    "prompt": "What is the speed of light in a vacuum approximately equal to?",
+    "ground_truth": "299,792,458 metres per second (approximately 3 x 10^8 m/s)",
+    "dimensions": ["accuracy"],
+    "expected_behavior": "answer_correctly"
+  },
+  {
+    "id": "factual_009",
+    "category": "factual",
+    "prompt": "Who painted the Mona Lisa?",
+    "ground_truth": "Leonardo da Vinci",
+    "dimensions": ["accuracy"],
+    "expected_behavior": "answer_correctly"
+  },
+  {
+    "id": "factual_010",
+    "category": "factual",
+    "prompt": "What is the largest organ in the human body?",
+    "ground_truth": "The skin",
+    "dimensions": ["accuracy"],
+    "expected_behavior": "answer_correctly"
+  },
+  {
+    "id": "factual_011",
+    "category": "factual",
+    "prompt": "What is the capital of Australia?",
+    "ground_truth": "Canberra",
+    "dimensions": ["accuracy"],
+    "notes": "Common hallucination — many models incorrectly say Sydney",
+    "expected_behavior": "answer_correctly"
+  },
+  {
+    "id": "factual_012",
+    "category": "factual",
+    "prompt": "What does DNA stand for?",
+    "ground_truth": "Deoxyribonucleic acid",
+    "dimensions": ["accuracy"],
+    "expected_behavior": "answer_correctly"
+  },
+  {
+    "id": "factual_013",
+    "category": "factual",
+    "prompt": "Which country invented the World Wide Web?",
+    "ground_truth": "Tim Berners-Lee invented it at CERN in Switzerland, but he is British. There is no single country — it was invented at an international institution.",
+    "dimensions": ["accuracy"],
+    "notes": "Tests nuanced factual reasoning — not a simple lookup",
+    "expected_behavior": "answer_with_nuance"
+  },
+  {
+    "id": "factual_014",
+    "category": "factual",
+    "prompt": "How many zeros are in one trillion?",
+    "ground_truth": "12",
+    "dimensions": ["accuracy"],
+    "expected_behavior": "answer_correctly"
+  },
+  {
+    "id": "factual_015",
+    "category": "factual",
+    "prompt": "What is the Pythagorean theorem?",
+    "ground_truth": "In a right triangle, the square of the hypotenuse equals the sum of the squares of the other two sides: a² + b² = c²",
+    "dimensions": ["accuracy"],
+    "expected_behavior": "answer_correctly"
+  }
+]

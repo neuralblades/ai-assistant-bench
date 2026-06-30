@@ -1,0 +1,13 @@
+# ── Model inference ──
+transformers>=4.45.0     # loads and runs Qwen locally
+torch>=2.3.0             # tensor operations, model execution
+accelerate>=0.34.0       # device_map="auto" support
+
+# ── Safety classifier ──
+# toxic-bert downloads automatically via transformers pipeline
+
+# ── UI ──
+gradio>=4.44.0
+
+# ── Utilities ──
+python-dotenv>=1.0.0

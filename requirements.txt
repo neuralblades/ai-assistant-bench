@@ -1,0 +1,13 @@
+# ── Core LLM SDKs ──
+anthropic>=0.40.0        # Claude API — also used as LLM judge
+openai>=1.50.0           # HuggingFace uses OpenAI-compatible API
+
+# ── UI ──
+gradio>=4.44.0           # Chat interface
+
+# ── Eval + Visualization ──
+matplotlib>=3.9.0        # Charts for eval report
+numpy>=1.26.0            # Array ops for chart data
+
+# ── Utilities ──
+python-dotenv>=1.0.0     # Load .env file for API keys

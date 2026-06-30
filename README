@@ -1,0 +1,216 @@
+# AI Personal Assistant — Frontier vs OSS Comparison
+
+A side-by-side comparison of two AI personal assistants built on different model tiers,
+with a structured evaluation framework measuring hallucination, bias, and content safety.
+
+---
+
+## Live Demo
+
+> Add your Gradio Space or Loom link here after deployment
+
+---
+
+## Project Structure
+
+```
+personal-assistant/
+├── core/
+│   ├── conversation.py        # ConversationManager — memory & sliding window
+│   └── adapters/
+│       ├── base.py            # AbstractAdapter + AdapterResponse
+│       ├── claude.py          # Claude Sonnet (Anthropic API)
+│       └── qwen.py            # Qwen2.5-7B-Instruct (HuggingFace API)
+├── eval/
+│   ├── judge.py               # LLM-as-judge with per-dimension rubrics
+│   ├── runner.py              # Eval pipeline — queries, scores, aggregates
+│   ├── visualize.py           # Radar chart, bar chart, cost/latency table
+│   └── prompts/
+│       ├── factual.json       # 15 factual prompts with ground truth
+│       ├── adversarial.json   # 12 jailbreak/safety prompts
+│       ├── bias.json          # 14 paired demographic prompts
+│       └── edge_cases.json    # 10 edge/ambiguous cases
+├── ui/
+│   └── app.py                 # Gradio side-by-side chat interface
+├── logs/                      # Eval results (auto-generated, gitignored)
+├── .env.example               # API key template
+└── requirements.txt
+```
+
+---
+
+## Quickstart
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/your-username/personal-assistant
+cd personal-assistant
+pip install -r requirements.txt
+```
+
+### 2. Set up API keys
+
+```bash
+cp .env.example .env
+# Edit .env and add your keys:
+# ANTHROPIC_API_KEY=...
+# HF_API_TOKEN=...
+```
+
+### 3. Run the chat UI
+
+```bash
+python ui/app.py
+# Opens at http://localhost:7860
+```
+
+### 4. Run the eval suite
+
+```bash
+python -c "
+from core.adapters.claude import ClaudeAdapter
+from core.adapters.qwen import QwenAdapter
+from eval.judge import Judge
+from eval.runner import EvalRunner
+
+runner = EvalRunner(
+    adapter_a=ClaudeAdapter(),
+    adapter_b=QwenAdapter(),
+    judge=Judge(),
+)
+results = runner.run()
+"
+```
+
+### 5. Generate report charts from eval results
+
+```bash
+python -c "
+from eval.visualize import generate_report
+generate_report('logs/eval_summary_<timestamp>.json')
+"
+```
+
+---
+
+## Architecture Decisions
+
+### 1. Shared Adapter Interface (`BaseAdapter`)
+
+Both models implement a common `generate(messages, system_prompt) → AdapterResponse` interface.
+The UI, eval runner, and conversation manager never touch vendor APIs directly —
+they only speak to the adapter abstraction.
+
+**Why:** Swapping or adding a third model (e.g. GPT-4.1) requires creating one new file
+and implementing three methods. No other layer changes.
+
+### 2. Separate ConversationManagers per Model
+
+The UI creates one `ConversationManager` per model, not one shared instance.
+
+**Why:** Turn counts, sliding window state, and token estimates are model-specific.
+A shared manager would require special-casing when models respond at different speeds
+or when one fails — keeping them independent eliminates this coordination problem.
+
+### 3. Sliding Window Context Management
+
+The ConversationManager implements a sliding window (`max_turns=10`) rather than
+full truncation or LLM-based summarization.
+
+**Why:** Truncation is abrupt and can cut important context mid-conversation.
+LLM summarization adds latency and complexity inappropriate for a first build.
+A sliding window is predictable, explainable, and sufficient for a personal assistant.
+
+### 4. LLM-as-Judge Evaluation
+
+Each (prompt, response) pair is scored by Claude Sonnet acting as an independent judge,
+using dimension-specific rubrics with anchored score levels (0–5).
+
+**Why:** Human evaluation doesn't scale. Reference-based metrics (BLEU, ROUGE) only work
+for factual prompts with exact answers and fail completely for safety/bias evaluation.
+LLM-as-judge is the current industry standard for nuanced response evaluation.
+
+**One dimension per judge call:** Requesting all scores in a single prompt degrades quality.
+Focused, single-dimension calls produce more consistent and reliable scores.
+
+### 5. OpenAI SDK for HuggingFace
+
+The Qwen adapter uses the `openai` Python SDK pointed at HuggingFace's
+OpenAI-compatible inference endpoint (`https://api-inference.huggingface.co/v1`).
+
+**Why:** HuggingFace exposes an OpenAI-compatible API, so we get a battle-tested SDK
+with built-in retry logic, connection pooling, and type safety for free —
+rather than writing raw `httpx` / `requests` calls.
+
+---
+
+## Tradeoffs
+
+| Decision | What we gained | What we gave up |
+|---|---|---|
+| Gradio over custom React UI | Fast to build, HF Spaces native | Less UI control, Gradio quirks |
+| Sliding window memory | Simple, predictable | Loses early context in long conversations |
+| No streaming | Clean latency measurements | Slightly worse UX (no token-by-token display) |
+| Claude as judge for both models | Reliable, capable judge | Potential favoritism toward Claude responses |
+| HF Inference API for Qwen | No GPU infra needed | Rate limits, variable latency, no model control |
+
+---
+
+## What I Would Improve With More Time
+
+**1. Retrieval-Augmented Generation (RAG)**
+Connect both assistants to a document store (e.g. Chroma + LlamaIndex).
+Factual grounding via retrieval dramatically reduces hallucination rate.
+
+**2. Fine-tuned safety classifier as pre-filter**
+Replace raw model refusal as the sole safety layer with a dedicated
+lightweight classifier (e.g. fine-tuned DeBERTa on toxic/non-toxic)
+that screens inputs before they reach the main model.
+
+**3. Judge model neutrality**
+Use a third, different model (e.g. GPT-4.1) as judge to reduce potential
+favoritism when Claude is evaluating Claude responses.
+
+**4. Persistent session storage**
+Write conversation histories to SQLite so sessions survive server restarts
+and users can review previous conversations.
+
+**5. Streaming responses**
+Implement streaming for better UX. Collect time-to-first-token and
+tokens-per-second separately from end-to-end latency for richer eval metrics.
+
+**6. Full deployment on HuggingFace Spaces**
+Deploy Qwen2.5-0.5B-Instruct on a public HF Space with a cost/latency
+instrumentation layer and guardrails (toxicity pre-filter + system prompt hardening).
+
+---
+
+## Evaluation Summary
+
+See `evaluation_report.pdf` for full results. Key findings:
+
+- **Claude Sonnet** leads on safety (+X pts), refusal quality (+X pts), and accuracy (+X pts)
+- **Qwen2.5-7B** is competitive on bias scores and offers significantly lower latency
+- **Cost:** Claude runs ~10–15× more expensive per turn at current pricing
+- **Recommendation:** Claude for production safety-critical use cases;
+  Qwen for cost-sensitive, latency-sensitive deployments where safety is handled at the infra layer
+
+> Fill in actual scores after running the eval suite.
+
+---
+
+## Running Tests
+
+```bash
+# Core layer smoke tests
+python -c "
+from core.conversation import ConversationManager
+from core.adapters.base import AdapterResponse
+cm = ConversationManager('You are helpful.', max_turns=3)
+cm.add_user_message('Hello')
+cm.add_assistant_message('Hi!')
+assert len(cm.get_messages()) == 3
+print('Core tests passed.')
+"
+```

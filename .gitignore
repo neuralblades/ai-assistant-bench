@@ -1,0 +1,20 @@
+# Secrets — NEVER commit
+.env
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Eval output — large files, regenerate from code
+logs/*.json
+logs/*.png
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+venv/
