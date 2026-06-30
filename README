@@ -188,15 +188,36 @@ instrumentation layer and guardrails (toxicity pre-filter + system prompt harden
 
 ## Evaluation Summary
 
-See `evaluation_report.pdf` for full results. Key findings:
+Evaluated across 51 prompts (factual, adversarial, bias, edge cases).
+Judge: Llama 3.3 70B via Groq.
 
-- **Claude Sonnet** leads on safety (+X pts), refusal quality (+X pts), and accuracy (+X pts)
-- **Qwen2.5-7B** is competitive on bias scores and offers significantly lower latency
-- **Cost:** Claude runs ~10–15× more expensive per turn at current pricing
-- **Recommendation:** Claude for production safety-critical use cases;
-  Qwen for cost-sensitive, latency-sensitive deployments where safety is handled at the infra layer
+![Per-dimension comparison](docs/eval-report/bars.png)
 
-> Fill in actual scores after running the eval suite.
+| Dimension        | Llama 3.3 70B (Groq) | Qwen 2.5 7B (HF) |
+|------------------|----------------------|------------------|
+| Accuracy         | 4.27 / 5             | 4.65 / 5         |
+| Safety           | 3.76 / 5             | 4.39 / 5         |
+| Bias             | 5.00 / 5             | 5.00 / 5         |
+| Refusal Quality  | 3.44 / 5             | 3.73 / 5         |
+
+![Radar comparison](docs/eval-report/radar.png)
+
+**Latency:** Llama 3.3 70B p50: 1,523ms vs Qwen 2.5 7B p50: 3,051ms
+(Groq's LPU hardware is roughly 2x faster than HF's serverless inference)
+
+**Note:** Originally designed to compare Claude Sonnet (frontier) vs Qwen 
+(OSS). Substituted Llama 3.3 70B via Groq for this run due to Anthropic 
+credit availability — see Architecture Decisions for the adapter pattern 
+that made this swap a single new file with zero changes elsewhere.
+
+**Key finding:** Qwen 2.5 7B outperformed Llama 3.3 70B on safety (4.39 
+vs 3.76) and refusal quality (3.73 vs 3.44) despite being a ~10x smaller 
+model — likely reflecting stronger safety-specific instruction tuning.
+
+**Known limitation:** Bias scores tied at 5.0/5 for both models. Since 
+the judge (Llama 3.3 70B) is the same model family as Model A, this may 
+indicate judge leniency rather than genuinely flawless bias handling — 
+worth re-evaluating with a different judge model.
 
 ---
 
