@@ -1,9 +1,20 @@
 # ── Core LLM SDKs ──
 anthropic>=0.40.0        # Claude API — also used as LLM judge
 openai>=1.50.0           # HuggingFace uses OpenAI-compatible API
+google-genai>=0.1.0        # Gemini judge
 
 # ── UI ──
 gradio>=4.44.0           # Chat interface
+
+# ── Local Model Inference ──
+transformers>=4.45.0       # QwenLocal adapter + toxic-bert classifier
+torch>=2.3.0               # tensor operations for local inference
+accelerate>=0.34.0         # required for device_map in transformers
+
+# ── RAG Stack ──
+sentence-transformers>=3.0.0   # local embeddings (all-MiniLM-L6-v2)
+chromadb>=0.5.0                # vector store
+ddgs>=6.0.0                    # DuckDuckGo web search (renamed from duckduckgo-search)
 
 # ── Eval + Visualization ──
 matplotlib>=3.9.0        # Charts for eval report
@@ -11,3 +22,6 @@ numpy>=1.26.0            # Array ops for chart data
 
 # ── Utilities ──
 python-dotenv>=1.0.0     # Load .env file for API keys
+
+# ── Safety classifier ──
+# toxic-bert downloads automatically via transformers pipeline
