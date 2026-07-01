@@ -7,7 +7,7 @@ with a structured evaluation framework measuring hallucination, bias, and conten
 
 ## Live Demo
 
-🤖 [Try it on HuggingFace Spaces](https://huggingface.co/spaces/Leo00786/assistant-bench) 
+🤖 [Try it on HuggingFace Spaces](https://huggingface.co/spaces/Leo00786/assistant-bench)
 
 ---
 
