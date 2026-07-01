@@ -1,0 +1,15 @@
+The Eiffel Tower is located in Paris, France. It was built by Gustave Eiffel
+and completed in 1889 for the World's Fair. It stands 330 meters tall and
+was the tallest man-made structure in the world for 41 years.
+
+The capital of Australia is Canberra, not Sydney. Canberra was purpose-built
+as the capital and became the seat of government in 1927.
+
+Python was created by Guido van Rossum and first released in 1991.
+It emphasizes code readability and simplicity.
+
+The Berlin Wall fell on November 9, 1989, marking the end of the Cold War era.
+It had divided East and West Berlin since 1961.
+
+Water boils at 100 degrees Celsius (212 Fahrenheit) at sea level.
+At higher altitudes, it boils at lower temperatures due to reduced air pressure.
