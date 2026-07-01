@@ -92,14 +92,19 @@ class RAGPipeline:
         Retrieve relevant chunks for a query.
 
         Source selection:
-          "auto"     → try document store first, fall back to web if empty
-          "document" → only search fixed document store
-          "upload"   → only search this session's uploaded documents
-          "web"      → only live web search
+        "auto"     → uploads first, then doc store, then web fallback
+        "document" → only search fixed document store
+        "upload"   → only search this session's uploaded documents
+        "web"      → only live web search
+
+        Priority in "auto" mode:
+        1. Session uploads (user explicitly provided these — highest intent)
+        2. Fixed document store (pre-loaded knowledge base)
+        3. Web search (live fallback when nothing local matches)
 
         Args:
             query      : the user's question
-            session_id : required for source="upload"
+            session_id : required for upload source to work
             source     : which source(s) to search
 
         Returns:
@@ -108,7 +113,7 @@ class RAGPipeline:
         if source == "document":
             return self._doc_retriever.retrieve(
                 query,
-                min_similarity=self._min_similarity
+                min_similarity=self._min_similarity,
             )
 
         elif source == "upload":
@@ -117,37 +122,40 @@ class RAGPipeline:
                 return []
             return self._upload_retrievers[session_id].retrieve(
                 query,
-                min_similarity=self._min_similarity
+                min_similarity=self._min_similarity,
             )
 
         elif source == "web":
             return self._web_retrieve(query)
 
-        else:  # "auto"
-            # Try document store first
-            results = self._doc_retriever.retrieve(
-                query,
-                min_similarity=self._min_similarity
-            )
-            if results:
-                return results
-
-            # Check session uploads if available
+        else:  # "auto" — uploads take priority over fixed store
+            # Step 1: Check session uploads FIRST
+            # User explicitly uploaded this — highest priority
             if session_id and session_id in self._upload_retrievers:
-                results = self._upload_retrievers[session_id].retrieve(
+                upload_results = self._upload_retrievers[session_id].retrieve(
                     query,
-                    min_similarity=self._min_similarity
+                    min_similarity=self._min_similarity,
                 )
-                if results:
-                    return results
+                if upload_results:
+                    print(f"[RAG] Found {len(upload_results)} results from upload")
+                    return upload_results
 
-            # Fall back to web search
+            # Step 2: Check fixed document store
+            doc_results = self._doc_retriever.retrieve(
+                query,
+                min_similarity=self._min_similarity,
+            )
+            if doc_results:
+                print(f"[RAG] Found {len(doc_results)} results from doc store")
+                return doc_results
+
+            # Step 3: Fall back to web search
             if self._use_web:
                 print("[RAG] No local results — falling back to web search")
                 return self._web_retrieve(query)
 
             return []
-
+            
     def format_context(self, chunks: list[dict]) -> str:
         """Format chunks for injection into the model's system prompt."""
         return self._doc_retriever.format_context(chunks)
