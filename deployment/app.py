@@ -30,6 +30,7 @@ import sys
 import os
 from pathlib import Path
 from datetime import datetime
+from core.rag import RAGPipeline
 
 import gradio as gr
 from dotenv import load_dotenv
@@ -91,7 +92,7 @@ print("Initializing deployment stack...")
 print("=" * 50)
 
 # Model — loads weights into memory (~30-60s on first run)
-print("\n[1/4] Loading model...")
+print("\n[1/5] Loading model...")
 adapter = QwenLocalAdapter(
     model_id="Qwen/Qwen2.5-0.5B-Instruct",
     device="auto",
@@ -99,16 +100,25 @@ adapter = QwenLocalAdapter(
 )
 
 # Safety layer
-print("[2/4] Initializing guardrails...")
+print("[2/5] Initializing guardrails...")
 guardrails = Guardrails(use_classifier=True)
 
 # Persistent memory
-print("[3/4] Initializing memory...")
+print("[3/5] Initializing memory...")
 memory = Memory()
 
 # Tool dispatcher
-print("[4/4] Initializing tools...")
+print("[4/5] Initializing tools...")
 tool_dispatcher = ToolDispatcher()
+
+#RAG Pipeline
+print("[5/5] Initializing RAG pipeline...")
+rag = RAGPipeline(
+    use_web=True,
+    collection="assistant_knowledge",
+    top_k=3,
+    min_similarity=0.6,
+)
 
 # Observability
 observability = Observability()
@@ -168,7 +178,8 @@ def chat(user_message: str, history: list, conversation_state: ConversationManag
         return history, _build_stats(None, guardrail_result, None), "", conversation_state
 
     # ── Step 2: Inject memory into system prompt ──────────────────────
-    system_prompt = build_system_prompt(memory, tool_dispatcher)
+    base_prompt = build_system_prompt(memory, tool_dispatcher)
+    system_prompt = rag.build_augmented_prompt(base_prompt, user_message)
 
     # ── Step 3: Add user message to conversation ──────────────────────
     conversation_state.add_user_message(user_message)
@@ -291,6 +302,23 @@ def forget_memory():
     return "✅ Memory cleared. I no longer remember any personal details."
 
 
+def handle_file_upload(file, conversation_state: ConversationManager):
+    """Index an uploaded file and confirm to the user."""
+    if file is None:
+        return conversation_state
+
+    import uuid
+    session_id = str(uuid.uuid4())[:8]
+
+    try:
+        count = rag.index_upload(file.name, session_id)
+        print(f"[Upload] Indexed {count} chunks from {file.name}")
+    except Exception as e:
+        print(f"[Upload] Failed: {e}")
+
+    return conversation_state
+
+
 # ─────────────────────────────────────────────
 # GRADIO UI
 # ─────────────────────────────────────────────
@@ -327,12 +355,17 @@ def build_ui():
                 )
 
                 with gr.Row():
-                    msg_input = gr.Textbox(
-                        placeholder="Ask me anything... (try math, dates, or general questions)",
-                        label="Your message",
-                        scale=5,
-                        lines=2,
-                    )
+                    with gr.Column(scale=4):
+                        msg_input = gr.Textbox(
+                            placeholder="Ask me anything... (try math, dates, or upload a doc and ask about it)",
+                            label="Your message",
+                            lines=2,
+                        )
+                    with gr.Column(scale=1):
+                        file_upload = gr.File(
+                            label="Upload document",
+                            file_types=[".txt", ".md", ".pdf"],
+                        )
                     with gr.Column(scale=1, min_width=120):
                         send_btn  = gr.Button("Send ➤", variant="primary")
                         reset_btn = gr.Button("New Chat 🔄", variant="secondary", size="sm")
