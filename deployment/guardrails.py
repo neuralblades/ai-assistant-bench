@@ -26,7 +26,10 @@ import re
 import os
 import time
 from dataclasses import dataclass
+from dotenv import load_dotenv
+load_dotenv()
 
+os.environ["HUGGING_FACE_HUB_TOKEN"] = os.getenv("HF_API_TOKEN", "")
 
 # ─────────────────────────────────────────────
 # RESULT TYPE
@@ -72,6 +75,12 @@ BLOCK_PATTERNS = [
     # Prompt injection markers
     r"\[SYSTEM:",
     r"</?(system|instruction|prompt)>",
+
+    # Self-harm / suicide risk
+    r"how (to|do people|does (one|someone)).{0,15}(commit|attempt).{0,10}suicide",
+    r"(suicide|self.harm).{0,10}methods?",
+    r"ways? to (kill|hurt) (myself|yourself|oneself)",
+    r"how (can|do) (i|you|someone) (kill|harm|hurt) (myself|yourself|oneself)",
 ]
 
 # Compile patterns once at import time — not on every call

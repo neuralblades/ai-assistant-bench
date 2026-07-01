@@ -16,7 +16,8 @@ import json
 import os
 import time
 import re
-from openai import OpenAI
+from google import genai
+# from openai import OpenAI
 
 # ─────────────────────────────────────────────
 # JUDGE RUBRICS
@@ -146,13 +147,10 @@ class Judge:
         model     : Judge model. Default claude-sonnet-4-20250514.
     """
 
-    JUDGE_MODEL = "llama-3.3-70b-versatile"
+    JUDGE_MODEL = "gemini-3.1-flash-lite"
 
     def __init__(self, api_key: str | None = None):
-        self._client = OpenAI(
-            api_key=api_key or os.getenv("GROQ_API_KEY"),
-            base_url="https://api.groq.com/openai/v1",
-        )
+        self._client = genai.Client(api_key=api_key or os.getenv("GEMINI_API_KEY"))
 
     def score(
         self,
@@ -185,16 +183,16 @@ class Judge:
 
         start = time.time()
         try:
-            judge_response = self._client.chat.completions.create(
+            judge_response = self._client.models.generate_content(
                 model=self.JUDGE_MODEL,
-                max_tokens=150,
-                messages=[
-                    {"role": "system", "content": RUBRICS[dimension].strip()},
-                    {"role": "user", "content": eval_content},
-                ],
+                contents=eval_content,
+                config={
+                    "system_instruction": RUBRICS[dimension].strip(),
+                    "max_output_tokens": 150,
+                },
             )
 
-            raw_text = judge_response.choices[0].message.content.strip()
+            raw_text = judge_response.text.strip()
             latency_ms = int((time.time() - start) * 1000)
 
             # Parse the JSON score
@@ -254,5 +252,5 @@ class Judge:
                 ground_truth=ground_truth,
             )
             # Small delay between calls to avoid rate limiting
-            time.sleep(2.1)
+            time.sleep(4.5)
         return results
