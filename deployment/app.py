@@ -422,6 +422,11 @@ def build_ui():
             inputs=[],
             outputs=[metrics_display],
         )
+        file_upload.change(
+            fn=handle_file_upload,
+            inputs=[file_upload, conversation_state],
+            outputs=[conversation_state],
+        )
 
     return demo
 
