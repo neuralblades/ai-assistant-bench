@@ -9,28 +9,29 @@ with the full production stack:
   - Persistent memory (cross-session facts)
   - Tool use (calculator, datetime)
   - Observability (request logging + metrics dashboard)
+  - RAG (retrieval augmented generation)
 
 Request flow on every user message:
-  1. Log incoming request (observability)
-  2. Check guardrails (pre-filter)
+  1. Check guardrails (pre-filter)
      → if blocked: return block message, log it, stop
-  3. Retrieve memory context, inject into system prompt
-  4. Add user message to ConversationManager
-  5. Call model (QwenLocalAdapter)
-  6. Check if model wants to call a tool
+  2. Build augmented system prompt (memory + RAG context)
+  3. Add user message to ConversationManager
+  4. Call model (QwenLocalAdapter)
+  5. Check if model wants to call a tool
      → if yes: execute tool, call model again with result
-  7. Post-filter model output (observability)
-  8. Add assistant response to ConversationManager
-  9. Extract and store any new facts (memory)
-  10. Log completed request (observability)
-  11. Return response to UI
+  6. Post-filter model output
+  7. Add assistant response to ConversationManager
+  8. Extract and store any new facts (memory)
+  9. Log completed request (observability)
+  10. Return response to UI
 """
 
 import sys
 import os
+import uuid
+import pathlib
 from pathlib import Path
 from datetime import datetime
-from core.rag import RAGPipeline
 
 import gradio as gr
 from dotenv import load_dotenv
@@ -42,6 +43,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.conversation import ConversationManager
 from core.adapters.qwen_local import QwenLocalAdapter
+from core.rag import RAGPipeline
 from deployment.guardrails import Guardrails
 from deployment.memory import Memory
 from deployment.tools import ToolDispatcher
@@ -50,36 +52,77 @@ from deployment.observability import Observability, RequestLog
 
 # ─────────────────────────────────────────────
 # SYSTEM PROMPT BUILDER
-# Assembled fresh each turn to include latest memory context
 # ─────────────────────────────────────────────
 
 BASE_SYSTEM_PROMPT = """You are a helpful, honest, and harmless AI personal assistant.
-Answer questions accurately and concisely.
-If you don't know something, say so rather than guessing.
+
+CRITICAL INSTRUCTION: When "Relevant context from knowledge base" is provided below, 
+you MUST use ONLY that context to answer factual questions. 
+Do NOT use your own training knowledge if context is provided.
+If the context says the Eiffel Tower is 330 meters, answer 330 meters.
+If the context says the capital is Canberra, answer Canberra.
+Always prefer provided context over your own memory.
+
+If no context is provided and you don't know something, say so rather than guessing.
 If a request is harmful, decline briefly and politely."""
 
 
 def build_system_prompt(memory: Memory, tool_dispatcher: ToolDispatcher) -> str:
     """
-    Build the full system prompt by combining:
+    Build the full system prompt combining:
     1. Base instructions
-    2. Memory context (what we know about the user)
-    3. Tool descriptions (what tools the model can call)
-
-    This is called fresh on every turn so new memory facts
-    are always included in the next response.
+    2. Memory context (known facts about the user)
+    3. Tool descriptions
     """
     parts = [BASE_SYSTEM_PROMPT]
 
-    # Inject memory context if we have any stored facts
     memory_context = memory.get_context_string()
     if memory_context:
         parts.append(f"\n{memory_context}")
 
-    # Inject tool descriptions
     parts.append(tool_dispatcher.system_prompt_addition)
-
     return "\n".join(parts)
+
+# User Intent detection
+
+def detect_source_intent(message: str) -> str:
+    """
+    Detect retrieval source intent from user message keywords.
+    
+    Returns one of: "upload", "document", "web", "auto"
+    """
+    msg = message.lower()
+
+    # Explicit web signals
+    web_signals = [
+        "web", "internet", "search online", "google",
+        "latest", "current", "today", "news",
+        "verify", "crossverify", "cross-verify",
+        "check online", "fact check", "confirm",
+        "what does the internet say",
+    ]
+    if any(s in msg for s in web_signals):
+        return "web"
+
+    # Explicit upload signals
+    upload_signals = [
+        "document", "uploaded", "file", "pdf",
+        "what i uploaded", "the file", "my document",
+        "from the doc", "in the document",
+    ]
+    if any(s in msg for s in upload_signals):
+        return "upload"
+
+    # Explicit knowledge base signals
+    kb_signals = [
+        "knowledge base", "your knowledge",
+        "what you know", "from your training",
+        "based on what you know",
+    ]
+    if any(s in msg for s in kb_signals):
+        return "document"
+
+    return "auto"
 
 
 # ─────────────────────────────────────────────
@@ -91,27 +134,22 @@ print("=" * 50)
 print("Initializing deployment stack...")
 print("=" * 50)
 
-# Model — loads weights into memory (~30-60s on first run)
 print("\n[1/5] Loading model...")
 adapter = QwenLocalAdapter(
-    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    model_id="Qwen/Qwen2.5-3B-Instruct",
     device="auto",
     max_tokens=512,
 )
 
-# Safety layer
 print("[2/5] Initializing guardrails...")
 guardrails = Guardrails(use_classifier=True)
 
-# Persistent memory
 print("[3/5] Initializing memory...")
 memory = Memory()
 
-# Tool dispatcher
 print("[4/5] Initializing tools...")
 tool_dispatcher = ToolDispatcher()
 
-#RAG Pipeline
 print("[5/5] Initializing RAG pipeline...")
 rag = RAGPipeline(
     use_web=True,
@@ -120,36 +158,68 @@ rag = RAGPipeline(
     min_similarity=0.6,
 )
 
-# Observability
+# Load fixed knowledge base if it exists
+docs_path = pathlib.Path(__file__).parent / "knowledge_base"
+if docs_path.exists() and any(docs_path.glob("*.txt")):
+    rag.index_knowledge_base(str(docs_path))
+    print(f"[RAG] Loaded {rag.indexed_chunks} chunks from knowledge base")
+else:
+    print("[RAG] No knowledge base found — web search only mode")
+
 observability = Observability()
 
 print("\nAll components initialized. Starting UI...\n")
 
 
 # ─────────────────────────────────────────────
+# SESSION FACTORY
+# Each Gradio session gets its own manager + session_id
+# ─────────────────────────────────────────────
+
+def create_session() -> dict:
+    """
+    Create a fresh session dict for a new user.
+    Stored in gr.State — one per browser session.
+
+    Contains:
+        manager    : ConversationManager for this user's history
+        session_id : unique ID used to isolate uploaded RAG documents
+    """
+    return {
+        "manager":    ConversationManager(
+                          system_prompt=BASE_SYSTEM_PROMPT,
+                          max_turns=10,
+                      ),
+        "session_id": str(uuid.uuid4())[:8],
+    }
+
+
+# ─────────────────────────────────────────────
 # CORE CHAT FUNCTION
 # ─────────────────────────────────────────────
 
-def chat(user_message: str, history: list, conversation_state: ConversationManager):
+def chat(user_message: str, history: list, session: dict):
     """
     Handle one user turn through the full production stack.
 
-    This function is called by Gradio on every message.
-    It orchestrates all layers in the correct order.
-
     Args:
-        user_message       : text the user typed
-        history            : Gradio chatbot history (list of [user, assistant] pairs)
-        conversation_state : ConversationManager held in gr.State
+        user_message : text the user typed
+        history      : Gradio chatbot history (list of role/content dicts)
+        session      : dict with 'manager' and 'session_id' from gr.State
 
     Returns:
         updated history, stats markdown, empty string (clears input),
-        updated conversation_state
+        updated session dict
     """
-    if not user_message.strip():
-        return history, "No message.", "", conversation_state
+    # Unpack session
+    mgr        = session["manager"]
+    session_id = session["session_id"]
+    print(f"[DEBUG] chat() session_id: {session_id}")
 
-    request_start = datetime.now().isoformat()
+    if not user_message.strip():
+        return history, "No message.", "", session
+
+    request_start    = datetime.now().isoformat()
     tool_called_name = None
     tool_called_result = None
 
@@ -157,8 +227,6 @@ def chat(user_message: str, history: list, conversation_state: ConversationManag
     guardrail_result = guardrails.check_input(user_message)
 
     if not guardrail_result.allowed:
-        # Blocked — log it and return the block message
-        # Do NOT add to conversation history — don't let the model see it
         block_msg = f"⚠️ I can't help with that request. {guardrail_result.reason}"
 
         observability.log(RequestLog(
@@ -174,68 +242,75 @@ def chat(user_message: str, history: list, conversation_state: ConversationManag
             success=True, error=None,
         ))
 
-        history = history + [[user_message, block_msg]]
-        return history, _build_stats(None, guardrail_result, None), "", conversation_state
+        history = history + [
+            {"role": "user",      "content": user_message},
+            {"role": "assistant", "content": block_msg},
+        ]
+        return history, _build_stats(None, guardrail_result, None), "", session
 
-    # ── Step 2: Inject memory into system prompt ──────────────────────
-    base_prompt = build_system_prompt(memory, tool_dispatcher)
-    system_prompt = rag.build_augmented_prompt(base_prompt, user_message)
+    # ── Step 2: Build augmented system prompt ─────────────────────────
+    base_prompt   = build_system_prompt(memory, tool_dispatcher)
+    source_intent = detect_source_intent(user_message)
+    system_prompt = rag.build_augmented_prompt(
+        base_prompt,
+        user_message,
+        session_id=session_id,
+        source=source_intent,
+    )
 
     # ── Step 3: Add user message to conversation ──────────────────────
-    conversation_state.add_user_message(user_message)
+    mgr.add_user_message(user_message)
 
     # ── Step 4: First model call ──────────────────────────────────────
     response = adapter.generate(
-        messages=conversation_state.get_messages(),
+        messages=mgr.get_messages(),
         system_prompt=system_prompt,
     )
 
     if not response.success:
         error_msg = f"⚠️ Model error: {response.error}"
-        history = history + [[user_message, error_msg]]
-        return history, "Model call failed.", "", conversation_state
+        history = history + [
+            {"role": "user",      "content": user_message},
+            {"role": "assistant", "content": error_msg},
+        ]
+        return history, "Model call failed.", "", session
 
     # ── Step 5: Tool use detection ────────────────────────────────────
     tool_result = tool_dispatcher.detect_and_execute(response.text)
 
     if tool_result:
-        # Model wants to call a tool
-        tool_called_name = tool_result.tool_name
+        tool_called_name   = tool_result.tool_name
         tool_called_result = tool_result.output
 
         if tool_result.success:
-            # Inject tool result back into the conversation
-            # and call the model a second time to generate the final answer
             tool_injection = f"TOOL_RESULT: {tool_result.output}"
-            conversation_state.add_assistant_message(response.text)  # log the tool call turn
-            conversation_state.add_user_message(tool_injection)       # inject result as "user"
+            mgr.add_assistant_message(response.text)
+            mgr.add_user_message(tool_injection)
 
-            # Second model call — now it has the tool result
             response = adapter.generate(
-                messages=conversation_state.get_messages(),
+                messages=mgr.get_messages(),
                 system_prompt=system_prompt,
             )
         else:
-            # Tool failed — tell the model and let it handle it gracefully
-            conversation_state.add_assistant_message(response.text)
-            conversation_state.add_user_message(f"TOOL_RESULT: Error — {tool_result.error}")
+            mgr.add_assistant_message(response.text)
+            mgr.add_user_message(f"TOOL_RESULT: Error — {tool_result.error}")
             response = adapter.generate(
-                messages=conversation_state.get_messages(),
+                messages=mgr.get_messages(),
                 system_prompt=system_prompt,
             )
 
     # ── Step 6: Post-filter ───────────────────────────────────────────
-    guardrails.check_output(response.text)  # logs if suspicious
+    guardrails.check_output(response.text)
 
     # ── Step 7: Update conversation history ───────────────────────────
-    conversation_state.add_assistant_message(response.text)
+    mgr.add_assistant_message(response.text)
 
-    # ── Step 8: Extract and store memory facts ─────────────────────────
+    # ── Step 8: Extract and store memory facts ────────────────────────
     stored_keys = memory.extract_and_store(user_message, response.text)
     if stored_keys:
         print(f"[Memory] Stored facts: {stored_keys}")
 
-    # ── Step 9: Log the completed request ─────────────────────────────
+    # ── Step 9: Log completed request ────────────────────────────────
     observability.log(RequestLog(
         timestamp=request_start,
         user_message=user_message,
@@ -253,11 +328,18 @@ def chat(user_message: str, history: list, conversation_state: ConversationManag
     ))
 
     # ── Step 10: Update UI ────────────────────────────────────────────
-    history = history + [[user_message, response.text]]
+    history = history + [
+        {"role": "user",      "content": user_message},
+        {"role": "assistant", "content": response.text},
+    ]
     stats = _build_stats(response, guardrail_result, tool_result)
 
-    return history, stats, "", conversation_state
+    return history, stats, "", session
 
+
+# ─────────────────────────────────────────────
+# HELPER FUNCTIONS
+# ─────────────────────────────────────────────
 
 def _build_stats(response, guardrail_result, tool_result) -> str:
     """Format per-turn stats for the stats panel."""
@@ -285,14 +367,14 @@ def _build_stats(response, guardrail_result, tool_result) -> str:
     return "\n".join(lines)
 
 
-def reset_conversation(conversation_state: ConversationManager):
+def reset_conversation(session: dict):
     """Clear conversation history. Memory persists across resets."""
-    conversation_state.reset()
-    return [], "Session reset. Memory preserved.", "", conversation_state
+    session["manager"].reset()
+    return [], "Session reset. Memory preserved.", "", session
 
 
 def get_metrics_tab():
-    """Called when user views the Metrics tab — refreshes the display."""
+    """Refresh the metrics dashboard."""
     return observability.format_metrics_markdown()
 
 
@@ -302,21 +384,16 @@ def forget_memory():
     return "✅ Memory cleared. I no longer remember any personal details."
 
 
-def handle_file_upload(file, conversation_state: ConversationManager):
-    """Index an uploaded file and confirm to the user."""
+def handle_file_upload(file, session: dict):
+    """Index an uploaded file into this session's RAG retriever."""
     if file is None:
-        return conversation_state
-
-    import uuid
-    session_id = str(uuid.uuid4())[:8]
-
+        return session
     try:
-        count = rag.index_upload(file.name, session_id)
-        print(f"[Upload] Indexed {count} chunks from {file.name}")
+        count = rag.index_upload(file.name, session["session_id"])
+        print(f"[Upload] Indexed {count} chunks, session: {session['session_id']}")
     except Exception as e:
         print(f"[Upload] Failed: {e}")
-
-    return conversation_state
+    return session
 
 
 # ─────────────────────────────────────────────
@@ -324,25 +401,17 @@ def handle_file_upload(file, conversation_state: ConversationManager):
 # ─────────────────────────────────────────────
 
 def build_ui():
-    with gr.Blocks(
-        title="AI Assistant — Deployed",
-    ) as demo:
+    with gr.Blocks(title="AI Assistant — Deployed") as demo:
 
         gr.Markdown("""
         # 🤖 Personal AI Assistant
         **Model:** Qwen2.5-0.5B-Instruct (local) &nbsp;|&nbsp;
-        **Stack:** Guardrails + Memory + Tools + Observability
+        **Stack:** Guardrails + Memory + Tools + RAG + Observability
         """)
 
-        # Per-session conversation state
-        conversation_state = gr.State(
-            lambda: ConversationManager(
-                system_prompt=BASE_SYSTEM_PROMPT,
-                max_turns=10,
-            )
-        )
+        # Per-session state — one dict per browser session
+        conversation_state = gr.State(create_session)
 
-        # ── Tabs ──
         with gr.Tabs():
 
             # ── Tab 1: Chat ──
@@ -350,8 +419,7 @@ def build_ui():
                 chatbot = gr.Chatbot(
                     label="Assistant",
                     elem_classes=["chatbox"],
-                    bubble_full_width=False,
-                    show_copy_button=True,
+                    buttons=["copy"],
                 )
 
                 with gr.Row():
@@ -367,8 +435,8 @@ def build_ui():
                             file_types=[".txt", ".md", ".pdf"],
                         )
                     with gr.Column(scale=1, min_width=120):
-                        send_btn  = gr.Button("Send ➤", variant="primary")
-                        reset_btn = gr.Button("New Chat 🔄", variant="secondary", size="sm")
+                        send_btn   = gr.Button("Send ➤", variant="primary")
+                        reset_btn  = gr.Button("New Chat 🔄", variant="secondary", size="sm")
                         forget_btn = gr.Button("Forget Me 🗑", variant="stop", size="sm")
 
                 stats_panel = gr.Markdown("Stats will appear here after your first message.")
@@ -422,6 +490,7 @@ def build_ui():
             inputs=[],
             outputs=[metrics_display],
         )
+
         file_upload.change(
             fn=handle_file_upload,
             inputs=[file_upload, conversation_state],
