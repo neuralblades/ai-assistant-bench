@@ -7,7 +7,7 @@ with a structured evaluation framework measuring hallucination, bias, and conten
 
 ## Live Demo
 
-> Add your Gradio Space or Loom link here after deployment
+🤖 [Try it on HuggingFace Spaces](https://huggingface.co/spaces/Leo00786/assistant-bench)
 
 ---
 

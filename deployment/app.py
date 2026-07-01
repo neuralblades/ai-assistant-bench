@@ -298,11 +298,6 @@ def forget_memory():
 def build_ui():
     with gr.Blocks(
         title="AI Assistant — Deployed",
-        theme=gr.themes.Soft(),
-        css="""
-            .chatbox { height: 500px; }
-            footer { display: none !important; }
-        """,
     ) as demo:
 
         gr.Markdown("""
@@ -408,4 +403,9 @@ if __name__ == "__main__":
         server_name="0.0.0.0",
         server_port=7860,
         share=False,
+        theme=gr.themes.Soft(),
+        css="""
+            .chatbox { height: 500px; }
+            footer { display: none !important; }
+        """,
     )
