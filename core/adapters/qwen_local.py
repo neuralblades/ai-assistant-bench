@@ -45,7 +45,7 @@ class QwenLocalAdapter(BaseAdapter):
         max_tokens : max new tokens to generate per response
     """
 
-    DEFAULT_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+    DEFAULT_MODEL = "Qwen/Qwen2.5-3B-Instruct"
 
     def __init__(
         self,
@@ -82,7 +82,7 @@ class QwenLocalAdapter(BaseAdapter):
         # On CPU, float32 is sometimes more stable — but float16 fits better
         self._model = AutoModelForCausalLM.from_pretrained(
             model_id,
-            torch_dtype=torch.float16 if self._device == "cuda" else torch.float32,
+            dtype=torch.float16 if self._device == "cuda" else torch.float32,
             device_map=self._device,
             trust_remote_code=True,
         )
