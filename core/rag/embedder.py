@@ -44,7 +44,7 @@ class Embedder:
     @property
     def dimension(self) -> int:
         """The size of vectors this model produces."""
-        return self._model.get_sentence_embedding_dimension()
+        return self._model.get_embedding_dimension()
 
     def embed_text(self, text: str) -> list[float]:
         """
