@@ -166,29 +166,21 @@ class RAGPipeline:
         query: str,
         session_id: str | None = None,
         source: str = "auto",
-    ) -> str:
+    ) -> tuple[str, str]:
         """
-        Retrieve relevant context and inject it into the system prompt.
-
-        This is the method your app calls on every user turn.
-        Returns the augmented system prompt ready to send to the model.
-
-        Args:
-            base_system_prompt : your normal system prompt
-            query              : the user's current message
-            session_id         : for upload source
-            source             : which retrieval source to use
-
-        Returns:
-            system prompt with relevant context prepended
+        Returns (system_prompt, context_string) as separate values.
+        Context is returned separately so the caller can inject it
+        into the user turn rather than the system prompt — models
+        follow user-turn context more reliably than system-prompt context
+        when it conflicts with pretraining knowledge.
         """
         chunks = self.retrieve(query, session_id=session_id, source=source)
 
         if not chunks:
-            return base_system_prompt
+            return base_system_prompt, ""
 
         context = self.format_context(chunks)
-        return f"{base_system_prompt}\n\n{context}"
+        return base_system_prompt, context
 
     # ── PRIVATE ──────────────────────────────────────────────────────
 
